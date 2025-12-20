@@ -15,6 +15,9 @@ from .decoders import FinetuneVCICountsDecoder
 from .decoders_nb import NBDecoder, nb_nll
 from .utils import build_mlp, get_activation_class, get_transformer_backbone, apply_lora
 
+from torch_geometric.nn import GINConv
+from torch_geometric.utils import dense_to_sparse
+from .utils_gene2gene_graph import get_genegraph_laplacian
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +100,51 @@ class ConfidenceToken(nn.Module):
         confidence_pred = self.confidence_projection(confidence_output).squeeze(-1)  # [B, 1]
 
         return main_output, confidence_pred
+
+class GINE(nn.Module):
+    def __init__(self, in_channels, hidden_channels, out_channels):
+        super(GINE, self).__init__()
+        nn1 = nn.Sequential(
+            nn.Linear(in_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, hidden_channels)
+        )
+        self.conv1 = GINConv(nn1)
+        self.bn1 = nn.BatchNorm1d(hidden_channels)
+        nn2 = nn.Sequential(
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, hidden_channels)
+        )
+        self.conv2 = GINConv(nn2)
+        self.bn2 = nn.BatchNorm1d(hidden_channels)
+        self.fc = nn.Linear(hidden_channels, out_channels)
+        adj_matrix = torch.load('gene2gene_graph.pt').float()
+        edge_index, edge_attr = dense_to_sparse(adj_matrix)
+        batch_edge_index = []
+        batch_size = 16
+        cell_set_len = 1 #128
+        B, D = batch_size*cell_set_len, adj_matrix.size(0)
+        for i in range(B):
+            batch_edge_index.append(edge_index + i * D)
+        self.edge_index = torch.cat(batch_edge_index, dim=1)
+        # self.edge_attr = edge_attr.repeat(B, 1)
+
+    def forward(self, xin):
+        b, s, indim, d = xin.size()
+        xin = xin.permute(1,0,2,3)
+        xin = xin.reshape(s, b*indim, d)
+        outlist = []
+        for i in range(s):
+            x = xin[i]
+            x = F.relu(self.conv1(x, self.edge_index))
+            x = self.bn1(x)
+            x = F.relu(self.conv2(x, self.edge_index))
+            x = self.bn2(x)
+            x = self.fc(x)
+            outlist.append(x.view(b,indim,d).unsqueeze(0))
+        out = torch.cat(outlist, dim=0).permute(1,0,2,3)
+        return out
 
 
 class StateTransitionPerturbationModel(PerturbationModel):
@@ -181,6 +229,12 @@ class StateTransitionPerturbationModel(PerturbationModel):
         else:
             raise ValueError(f"Unknown loss function: {loss_name}")
 
+        self.use_graph_reg_loss = True
+        if self.use_graph_reg_loss:
+            self.gene2gene_laplacian = get_genegraph_laplacian().float()
+            self.reg_loss_lambda = 0.05
+            print (" training with graph laplacian regularization loss")            
+            
         self.use_basal_projection = kwargs.get("use_basal_projection", True)
 
         # Build the underlying neural OT network
@@ -334,6 +388,13 @@ class StateTransitionPerturbationModel(PerturbationModel):
             self.transformer_backbone_kwargs,
         )
 
+        self.use_GNN_embeddings = False
+        if self.use_GNN_embeddings:
+            self.gene_ids = torch.arange(self.input_dim, device='cuda')
+            self.emb = nn.Embedding(self.input_dim, 1)
+            self.gnn_in = nn.Linear(2, self.hidden_dim)
+            self.gnn = GINE(self.hidden_dim, self.hidden_dim//8, self.hidden_dim)
+
         # Optionally wrap backbone with LoRA adapters
         if lora_cfg and lora_cfg.get("enable", False):
             self.transformer_backbone = apply_lora(
@@ -398,6 +459,15 @@ class StateTransitionPerturbationModel(PerturbationModel):
         combined_input = pert_embedding + control_cells  # Shape: [B, S, hidden_dim]
         seq_input = combined_input  # Shape: [B, S, hidden_dim]
 
+        if self.use_GNN_embeddings:
+            b, s, indim = basal.size()
+            emb = self.emb(self.gene_ids) # (18k,1)
+            emb = emb.view(1,1,indim).expand(b, s, indim)
+            emb = torch.stack([basal, emb], dim=-1) # b x s x indim x 2
+            graph_out = self.gnn_in(emb.view(-1, 2))
+            graph_out = self.gnn(graph_out)
+            seq_input += graph_out.sum(2).squeeze() #view(b, s, -1)
+            
         if self.batch_encoder is not None:
             # Extract batch indices (assume they are integers or convert from one-hot)
             batch_indices = batch["batch"]
@@ -516,6 +586,11 @@ class StateTransitionPerturbationModel(PerturbationModel):
             target = target.reshape(1, -1, self.output_dim)
 
         main_loss = self.loss_fn(pred, target).nanmean()
+        
+        if self.use_graph_reg_loss:
+            graph_reg_loss = torch.trace(self.basal_encoder.weight @ self.gene2gene_laplacian.to(target.device) @ self.basal_encoder.weight.T)
+            main_loss += self.reg_loss_lambda * graph_reg_loss
+        
         self.log("train_loss", main_loss)
 
         # Log individual loss components if using combined loss
