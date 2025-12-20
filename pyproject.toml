@@ -38,7 +38,12 @@ vectordb = [
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.11.11", "vulture>=2.14", "ipython>=8.37.0"]
+dev = [
+    "ruff>=0.11.11",
+    "vulture>=2.14",
+    "ipython>=8.37.0",
+    "ipykernel>=7.1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
