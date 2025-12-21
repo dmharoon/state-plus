@@ -17,3 +17,4 @@ mfu_kwargs:
     logging_interval: 10
     window_size: 2
 cumulative_flops_use_backward: true
+use_graph_reg_loss: false

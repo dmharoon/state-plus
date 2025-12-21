@@ -229,7 +229,7 @@ class StateTransitionPerturbationModel(PerturbationModel):
         else:
             raise ValueError(f"Unknown loss function: {loss_name}")
 
-        self.use_graph_reg_loss = True
+        self.use_graph_reg_loss = kwargs.get("use_graph_reg_loss",True)
         if self.use_graph_reg_loss:
             self.gene2gene_laplacian = get_genegraph_laplacian().float()
             self.reg_loss_lambda = 0.05
