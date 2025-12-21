@@ -30,6 +30,7 @@ dependencies = [
     "cell-eval>=0.5.22",
     "ipykernel>=6.30.1",
     "scipy>=1.15.0",
+    "torch-geometric>=2.7.0",
 ]
 
 [project.optional-dependencies]
