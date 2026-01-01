@@ -377,8 +377,18 @@ def run_tx_infer(args: argparse.Namespace):
         checkpoint_path = os.path.join(args.model_dir, "checkpoints", "final.ckpt")
         if not args.quiet:
             print(f"No --checkpoint given, using {checkpoint_path}")
+    
+    model_name = None
+    try:
+        model_name = cfg.get("model", {}).get("name", None)
+    except Exception:
+        model_name = None
 
-    model = StateTransitionPerturbationModel.load_from_checkpoint(checkpoint_path)
+    if model_name is not None and model_name.lower() == "model_x":
+        from ...tx.models.model_X import PseudobulkPerturbationModelX
+        model = PseudobulkPerturbationModelX.load_from_checkpoint(checkpoint_path)    
+    else:
+        model = StateTransitionPerturbationModel.load_from_checkpoint(checkpoint_path)
     model.eval()
     device = next(model.parameters()).device
     cell_set_len = args.max_set_len if args.max_set_len is not None else getattr(model, "cell_sentence_len", 256)

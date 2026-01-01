@@ -1,0 +1,39 @@
+name: model_x
+checkpoint: null
+device: cuda
+
+kwargs:
+  cell_set_len: 128
+  blur: 0.05
+  hidden_dim: 672  # hidden dimension going into the transformer backbone
+  loss: energy
+  confidence_head: False
+  n_encoder_layers: 4
+  n_decoder_layers: 4
+  predict_residual: True
+  softplus: True
+  freeze_pert_backbone: False
+  transformer_decoder: False
+  finetune_vci_decoder: False
+  residual_decoder: False
+  batch_encoder: False
+  nb_decoder: False
+  mask_attn: False
+  use_effect_gating_token: False
+  use_basal_projection: False
+  distributional_loss: energy
+  gene_decoder_bool: False
+  init_from: null
+  pred_delta: False
+  aux_loss: True
+  transformer_backbone_key: GPT2
+  transformer_backbone_kwargs:
+      n_positions: ${model.kwargs.cell_set_len}
+      n_embd: 672
+      d_inner: 672
+      n_layer: 4
+      n_head: 8
+      resid_pdrop: 0.0
+      embd_pdrop: 0.0
+      attn_pdrop: 0.0
+      use_cache: false

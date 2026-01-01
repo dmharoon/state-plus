@@ -249,10 +249,10 @@ def get_lightning_module(model_type: str, data_config: dict, model_config: dict,
             batch_dim=var_dims["batch_dim"],
             **module_config,
         )
-    elif model_type.lower() == "pseudobulk":
-        from ...tx.models.pseudobulk import PseudobulkPerturbationModel
+    elif model_type.lower() == "model_x":
+        from ...tx.models.model_X import PseudobulkPerturbationModelX
 
-        return PseudobulkPerturbationModel(
+        return PseudobulkPerturbationModelX(
             input_dim=var_dims["input_dim"],
             gene_dim=gene_dim,
             hvg_dim=var_dims["hvg_dim"],
